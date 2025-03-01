@@ -1,0 +1,6 @@
+.vscode/
+_temp_*
+3707708/
+*wav
+*png
+src/trainer/model_weights*
