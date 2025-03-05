@@ -7,8 +7,10 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
+from ..data.dataset import AudioOrientation
 from ..seldnet_model import SeldModel
 from .txt_logger import TxtLogger
+from .utils import TaskType
 from .validator import SOValidator
 
 
@@ -63,7 +65,7 @@ class Trainer:
 
         self.epoch_stats = EpochStats()
 
-        self.validator = SOValidator(device)
+        self.validator = SOValidator(device, self.task_type)
 
     def fit(self, train_loader: torch.utils.data.DataLoader, val_loader: torch.utils.data.DataLoader) -> None:
         self.on_fit_start()
@@ -89,10 +91,15 @@ class Trainer:
 
     def train_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         feats, target = batch
-        target = F.one_hot(target, self.model.nb_classes).float()
+        if self.task_type == TaskType.classification:
+            target = torch.tensor(
+                [AudioOrientation._orientation_to_label(orientation.item()) for orientation in target]
+            )
+            target = F.one_hot(target, self.model.nb_classes).float()
         feats, target = feats.to(self.device), target.to(self.device)
         feats = self.model.audio_processor(feats)
         output = self.model(feats.permute(0, 3, 1, 2))
+        output = output.squeeze(1) if self.task_type == TaskType.regression else output
         loss = self.criterion(output, target)
 
         if batch_idx % self.log_every_n_steps == 0:
@@ -114,7 +121,9 @@ class Trainer:
 
     def on_epoch_start(self):
         """Set model to training mode and reset running metrics."""
-        self.txt_logger.log_dict({**self.validator.result.accuracy_per_class, "Overall": self.validator.result})
+        self.txt_logger.log_dict({"Classification": self.validator.result_class})
+        if self.task_type == TaskType.regression:
+            self.txt_logger.log_dict({"Regression": self.validator.result_reg})
         self.model.train()
         self.current_epoch += 1
         self.txt_logger.log("-" * 50 + f"\nStarting epoch {self.current_epoch}, current lr: {self.current_lr}")
@@ -174,3 +183,7 @@ class Trainer:
         directory = Path(dir_path)
         directory.mkdir(parents=True, exist_ok=True)
         return directory
+
+    @property
+    def task_type(self) -> TaskType:
+        return TaskType.classification if self.model.nb_classes > 1 else TaskType.regression

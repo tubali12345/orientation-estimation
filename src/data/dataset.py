@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 class TrainingSample(NamedTuple):
     feats: torch.Tensor
-    label: int
+    label: float
 
 
 class DatasetSample(NamedTuple):
@@ -36,7 +36,7 @@ class AudioOrientation(Dataset):
             self.dataset_samples.append(
                 DatasetSample(audio_path, json.loads((audio_path.parent / "metadata.json").read_text()))
             )
-            if limit is not None and i >= limit * 50:
+            if limit is not None and i >= limit:
                 break
         random.seed(42)
         random.shuffle(self.dataset_samples)
@@ -58,8 +58,7 @@ class AudioOrientation(Dataset):
         try:
             feats = self._load_audio(self.dataset_samples[idx].audio_path)
             orientation = self._get_orientation(self.dataset_samples[idx].metadata)
-            label = self._orientation_to_label(orientation)
-            return TrainingSample(feats, label)
+            return TrainingSample(feats, orientation)
         except Exception as e:
             print(f"Error loading sample {idx}: {e}")
             return None

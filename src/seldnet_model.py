@@ -94,9 +94,6 @@ class SeldModel(torch.nn.Module):
             )
         )
 
-        self.doa_act = nn.Tanh()
-        self.dist_act = nn.ReLU()
-
     def forward(self, x, vid_feat=None):
         """input: (batch_size, mic_channels, time_steps, mel_bins)"""
         for conv_cnt in range(len(self.conv_block_list)):

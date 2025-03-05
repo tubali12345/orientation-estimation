@@ -8,9 +8,8 @@ from torch.utils.data import DataLoader
 from torchsummary import summary
 
 from src.data.dataset import AudioOrientation
+from src.seldnet_model import SeldModel
 from src.trainer.trainer import Frequency, Scheduler, Trainer
-
-from ..seldnet_model import SeldModel
 
 
 def load_config(config_path: str) -> dict:
@@ -23,13 +22,13 @@ def init_seld_model(model_config: dict, pretrained_model_path: Optional[str] = N
     if pretrained_model_path:
         print(f"Loading pretrained model from {pretrained_model_path}")
         state_dict = torch.load(pretrained_model_path, map_location="cpu")
-        # del state_dict["fnn_list.1.weight"]
-        # del state_dict["fnn_list.1.bias"]
-        # del state_dict["conv_block_list.0.conv.weight"]
+        del state_dict["fnn_list.1.weight"]
+        del state_dict["fnn_list.1.bias"]
+        del state_dict["conv_block_list.0.conv.weight"]
         model.load_state_dict(state_dict, strict=False)
     else:
         print("No pretrained model provided, initializing with random weights")
-    summary(model, depth=1)
+    summary(model, depth=2)
     return model
 
 
@@ -38,7 +37,7 @@ def init_trainer(trainer_config: dict, lr_scheduler_config: dict, model: SeldMod
     lr = lr_scheduler_config["initial_lr"]
     model = model.to(trainer_config["device"])
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = torch.nn.CrossEntropyLoss()
+    criterion = torch.nn.CrossEntropyLoss() if model.nb_classes > 1 else torch.nn.MSELoss()
     scheduler = Scheduler(
         getattr(torch.optim.lr_scheduler, lr_scheduler_config["scheduler"])(
             optimizer, **lr_scheduler_config["params"]
