@@ -9,8 +9,8 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from ..data.dataset import AudioOrientation
-from ..seldnet_model import SeldModel
+from ..data.dataset_anchor import AudioOrientationAnchor
+from ..seldnet_anchor_model import SeldModelAnchor
 from .txt_logger import TxtLogger
 from .validator import SOValidator
 
@@ -36,7 +36,7 @@ class Trainer:
     def __init__(
         self,
         *,
-        model: SeldModel,
+        model: SeldModelAnchor,
         optimizer: torch.optim.Optimizer,
         criterion: torch.nn.Module,
         scheduler: Scheduler,
@@ -93,13 +93,14 @@ class Trainer:
         self.on_epoch_end()
 
     def train_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
-        feats, target = batch
+        feats1, feats2, target, _, _ = batch
         target = torch.stack(
-            [torch.tensor(AudioOrientation._orientation_to_xy(orientation.item())) for orientation in target]
+            [torch.tensor(AudioOrientationAnchor._orientation_to_xy(orientation.item())) for orientation in target]
         )
-        feats, target = feats.to(self.device), target.to(self.device)
-        feats = self.model.audio_processor(feats)
-        output = self.model(feats.permute(0, 3, 1, 2))
+        feats1, feats2, target = feats1.to(self.device), feats2.to(self.device), target.to(self.device)
+        feats1 = self.model.audio_processor(feats1)
+        feats2 = self.model.audio_processor(feats2)
+        output = self.model(feats1.permute(0, 3, 1, 2), feats2.permute(0, 3, 1, 2))
         loss = self.criterion(output, target)
 
         angular_error = self._calc_mean_angular_error(output, target)
@@ -183,12 +184,12 @@ class Trainer:
                 },
                 step=self.current_epoch,
             )
-            # create confusion matrix
-            if isinstance(self.logger, pl_loggers.TensorBoardLogger):
-                image = self.plot_confusion_matrix_from_dict(
-                    self.validator.result_class.y_true, self.validator.result_class.y_pred
-                )
-                self.logger.experiment.add_image("confusion_matrix", image, global_step=self.current_epoch)
+            # # create confusion matrix
+            # if isinstance(self.logger, pl_loggers.TensorBoardLogger):
+            #     image = self.plot_confusion_matrix_from_dict(
+            #         self.validator.result_class.y_true, self.validator.result_class.y_pred
+            #     )
+            #     self.logger.experiment.add_image("confusion_matrix", image, global_step=self.current_epoch)
 
     @staticmethod
     def plot_confusion_matrix_from_dict(y_true: np.ndarray | None, y_pred: np.ndarray | None) -> torch.Tensor:

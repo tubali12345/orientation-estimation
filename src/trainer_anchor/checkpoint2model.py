@@ -12,7 +12,7 @@ def _parse_args() -> dict:
 
 
 def checkpoint2model(checkpoint_path: Path, output_path: Path) -> None:
-    checkpoint = torch.load(checkpoint_path, weights_only=False)
+    checkpoint = torch.load(checkpoint_path, weights_only=False, map_location="cpu")
     model: torch.nn.Module = checkpoint["model"]
     torch.save(model.state_dict(), output_path)
 

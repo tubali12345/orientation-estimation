@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ..data.dataset import AudioOrientation
-from ..seldnet_model import SeldModel
+from ..seldnet_anchor_model import SeldModelAnchor
 
 
 def _add_ndarrays(a: np.ndarray | None, b: np.ndarray | None) -> np.ndarray | None:
@@ -54,7 +54,10 @@ class ClassificationResult:
 
     @property
     def accuracy_per_class(self) -> dict[int, float]:
-        return {k: self.correct_per_class[k] / self.total_per_class[k] for k in self.correct_per_class}
+        return {
+            k: self.correct_per_class[k] / self.total_per_class[k] if self.total_per_class[k] else 0
+            for k in self.correct_per_class
+        }
 
 
 @dataclass
@@ -101,10 +104,10 @@ class SOValidator:
 
         self.criteria = torch.nn.MSELoss(reduction="sum")
 
-    def __call__(self, model: SeldModel, val_loader: DataLoader) -> None:
+    def __call__(self, model: SeldModelAnchor, val_loader: DataLoader) -> None:
         self.validate(model, val_loader)
 
-    def validate(self, model: SeldModel, val_loader: DataLoader) -> None:
+    def validate(self, model: SeldModelAnchor, val_loader: DataLoader) -> None:
         self.on_validation_start()
         model.eval()
 
@@ -124,11 +127,12 @@ class SOValidator:
         self.on_validation_end()
 
     @torch.no_grad()
-    def validate_batch(self, model: SeldModel, batch) -> tuple[ClassificationResult, RegressionResult]:
-        feats, target, mic_positions, src_positions = batch
-        feats, target = feats.to(self.device), target.to(self.device)
-        feats = model.audio_processor(feats)
-        output = model(feats.permute(0, 3, 1, 2))
+    def validate_batch(self, model: SeldModelAnchor, batch) -> tuple[ClassificationResult, RegressionResult]:
+        feats1, feats2, target, mic_positions, src_positions = batch
+        feats1, feats2, target = feats1.to(self.device), feats2.to(self.device), target.to(self.device)
+        feats1 = model.audio_processor(feats1)
+        feats2 = model.audio_processor(feats2)
+        output = model(feats1.permute(0, 3, 1, 2), feats2.permute(0, 3, 1, 2))
         return self._calc_stats(output, target, mic_positions, src_positions)
 
     @torch.no_grad()

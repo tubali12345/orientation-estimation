@@ -9,7 +9,11 @@ from scipy.signal import resample
 
 
 def load_audio(
-    speech_file: str | Path, sampling_rate: int, min_sample_rate: Optional[int] = None, verbose: bool = False
+    speech_file: str | Path,
+    sampling_rate: int,
+    min_sample_rate: Optional[int] = None,
+    verbose: bool = False,
+    max_duration: Optional[float] = None,
 ) -> np.ndarray | None:
     speech, fs = sf.read(speech_file)
     if min_sample_rate is not None and fs < min_sample_rate:
@@ -22,6 +26,8 @@ def load_audio(
         if verbose:
             print(f"Resampling {speech_file} audio from {fs} Hz to {sampling_rate} Hz")
         speech = resample(speech, int(len(speech) * sampling_rate / fs))
+    if max_duration is not None and len(speech) / fs > max_duration:
+        speech = speech[: int(max_duration * fs)]
     return speech  # type: ignore
 
 
