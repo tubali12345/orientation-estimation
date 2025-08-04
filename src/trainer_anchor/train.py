@@ -7,8 +7,8 @@ import torch.optim.lr_scheduler
 from torch.utils.data import DataLoader
 from torchsummary import summary
 
-from src.data.dataset_anchor import AudioOrientationAnchor
-from src.seldnet_anchor_model import SeldModelAnchor
+from data.datasets.dataset_anchor import AudioOrientationAnchor
+from model.seldnet_singleshot_model import SeldModelAnchor
 from src.trainer_anchor.trainer import Frequency, Scheduler, Trainer
 
 

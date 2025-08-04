@@ -9,8 +9,8 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from ..data.dataset_anchor import AudioOrientationAnchor
-from ..seldnet_anchor_model import SeldModelAnchor
+from ..data.datasets.dataset_anchor import AudioOrientationAnchor
+from ..model.seldnet_singleshot_model import SeldModelAnchor
 from .txt_logger import TxtLogger
 from .validator import SOValidator
 

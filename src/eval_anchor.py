@@ -7,8 +7,8 @@ import torch
 from torch.utils.data import DataLoader
 
 import src.trainer_anchor.validator as val
-from seldnet_anchor_model import SeldModelAnchor
-from src.data.dataset_anchor import AudioOrientationAnchor
+from data.datasets.dataset_anchor import AudioOrientationAnchor
+from model.seldnet_singleshot_model import SeldModelAnchor
 
 
 def _load_model_from_checkpoint(checkpoint_path) -> SeldModelAnchor:

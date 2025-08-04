@@ -6,8 +6,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from ..data.dataset import AudioOrientation
-from ..seldnet_model import SeldModel
+from ..data.datasets.dataset_zeroshot import AudioOrientation
+from ..model.seldnet_zeroshot_model import SeldModel
 
 
 def _add_ndarrays(a: np.ndarray | None, b: np.ndarray | None) -> np.ndarray | None:

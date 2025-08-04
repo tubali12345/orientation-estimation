@@ -8,3 +8,6 @@ model_weights*
 *.pyc
 plots/
 config*.jsonnet
+configs/
+__pycache__/
+simulate_cv_db.py

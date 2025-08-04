@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -5,8 +7,8 @@ import torch
 from torch.utils.data import DataLoader
 
 import src.trainer.validator as val
-from seldnet_model import SeldModel
-from src.data.dataset import AudioOrientation
+from data.datasets.dataset_zeroshot import AudioOrientation
+from model.seldnet_zeroshot_model import SeldModel
 
 
 def _load_model_from_checkpoint(checkpoint_path) -> SeldModel:
@@ -40,11 +42,19 @@ def positions_to_distance(mic_positions: np.ndarray, src_positions: np.ndarray) 
 
 def plot_hist_error(errors: np.ndarray, bins: int = 100):
     plt.figure(figsize=(8, 4))
-    sns.histplot(errors, bins=bins, kde=True)
+    sns.histplot(errors, bins=bins, kde=True, color="blue", edgecolor="black")
+
+    # Compute and plot mean
+    mean_error = np.mean(errors)
+    plt.axvline(mean_error, color="red", linestyle="--", linewidth=2, label=f"Mean = {mean_error:.2f}°")
+
+    # Labels and styling
     plt.xlabel("Angular Error (degrees)")
     plt.ylabel("Frequency")
     plt.title("Distribution of Angular Errors")
-    plt.savefig("plots/angular_error_hist.png")
+    plt.legend()
+
+    plt.savefig("plots/angular_error_hist.png", bbox_inches="tight")
     plt.show()
 
 
@@ -61,13 +71,35 @@ def plot_scatter_true_pred(y_true: np.ndarray, y_pred: np.ndarray):
     plt.show()
 
 
-def plot_scatter_dist_error(distances: np.ndarray, errors: np.ndarray):
-    plt.figure(figsize=(8, 4))
-    sns.scatterplot(x=distances, y=errors)
+def plot_scatter_dist_error(distances: np.ndarray, errors: np.ndarray, bin_width: float = 0.5):
+    plt.figure(figsize=(10, 5))
+    sns.scatterplot(x=distances, y=errors, alpha=0.3, s=10, color="gray", label="Raw Data")
+
+    # Binning
+    max_dist = np.max(distances)
+    bins = np.arange(0, max_dist + bin_width, bin_width)
+    bin_indices = np.digitize(distances, bins)
+
+    bin_centers = []
+    mean_errors = []
+
+    for i in range(1, len(bins)):
+        bin_mask = bin_indices == i
+        if np.any(bin_mask):
+            bin_center = (bins[i - 1] + bins[i]) / 2
+            bin_mean_error = np.mean(errors[bin_mask])
+            bin_centers.append(bin_center)
+            mean_errors.append(bin_mean_error)
+
+    # Plot trend line
+    sns.lineplot(x=bin_centers, y=mean_errors, color="red", linewidth=2, label="Mean Error Trend")
+
+    # Labels and styling
     plt.xlabel("Distance (m)")
     plt.ylabel("Angular Error (degrees)")
     plt.title("Angular Error vs. Distance")
-    plt.savefig("plots/angular_error_vs_distance.png")
+    plt.legend()
+    plt.savefig("plots/angular_error_vs_distance.png", bbox_inches="tight")
     plt.show()
 
 
@@ -105,23 +137,24 @@ def plot_grid_srcpos_vs_error(
     plt.show()
 
 
-def plot_degree_vs_error(y_true: np.ndarray, errors: np.ndarray):
-    # Normalize degrees to 0-359 and bin errors
-    degree_bins = np.arange(360)
-    error_per_degree = np.zeros(360)
-    counts = np.zeros(360)
+def plot_degree_vs_error(y_true: np.ndarray, errors: np.ndarray, resolution: int = 10):
+    # Normalize degrees to 0-359 and bin errors based on the resolution
+    degree_bins = np.arange(0, 360, resolution)
+    error_per_bin = np.zeros(len(degree_bins))
+    counts = np.zeros(len(degree_bins))
 
     for deg, err in zip(y_true.astype(int) % 360, errors):
-        error_per_degree[deg] += err
-        counts[deg] += 1
+        bin_index = deg // resolution
+        error_per_bin[bin_index] += err
+        counts[bin_index] += 1
 
     # Avoid division by zero
     with np.errstate(divide="ignore", invalid="ignore"):
-        mean_error = np.divide(error_per_degree, counts)
+        mean_error = np.divide(error_per_bin, counts)
         mean_error = np.nan_to_num(mean_error)
 
     # Polar plot setup
-    theta = np.deg2rad(degree_bins)
+    theta = np.deg2rad(degree_bins + resolution / 2)  # Center bins
     radii = np.ones_like(theta)  # Constant radius
 
     # Normalize colors
@@ -131,7 +164,7 @@ def plot_degree_vs_error(y_true: np.ndarray, errors: np.ndarray):
 
     # Plot
     fig, ax = plt.subplots(subplot_kw={"projection": "polar"}, figsize=(10, 8))
-    bars = ax.bar(theta, radii, width=np.deg2rad(1), bottom=0.0, color=colors, edgecolor="black")
+    bars = ax.bar(theta, radii, width=np.deg2rad(resolution), bottom=0.0, color=colors, edgecolor="black")
 
     ax.set_yticklabels([])
     ax.set_title("Prediction Error by Head Orientation Degree", va="bottom", fontsize=14)
@@ -146,11 +179,53 @@ def plot_degree_vs_error(y_true: np.ndarray, errors: np.ndarray):
     plt.show()
 
 
+def plot_error_spider_chart(y_true: np.ndarray, errors: np.ndarray, resolution: int = 10):
+    # Normalize degrees and initialize bins
+    degree_bins = np.arange(0, 360, resolution)
+    error_per_bin = np.zeros(len(degree_bins))
+    counts = np.zeros(len(degree_bins))
+
+    for deg, err in zip(y_true.astype(int) % 360, errors):
+        bin_index = deg // resolution
+        error_per_bin[bin_index] += err
+        counts[bin_index] += 1
+
+    # Mean error per bin
+    with np.errstate(divide="ignore", invalid="ignore"):
+        mean_error = np.divide(error_per_bin, counts)
+        mean_error = np.nan_to_num(mean_error)
+
+    # Prepare radar chart data
+    labels = [f"{int(angle)}°" for angle in degree_bins]
+    values = mean_error.tolist()
+    values.append(values[0])  # Repeat first value to close the loop
+    labels.append(labels[0])  # Repeat first label
+
+    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=True)
+
+    # Plot spider chart
+    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+    ax.plot(angles, values, color="r", linewidth=2)
+    ax.fill(angles, values, color="r", alpha=0.25)
+
+    # Style
+    ax.set_xticks(angles)
+    ax.set_xticklabels(labels, fontsize=8)
+    ax.set_yticklabels([])
+    ax.set_title("Mean Angular Error by Orientation (Spider Chart)", fontsize=14, pad=20)
+
+    plt.savefig("plots/spider_chart_error.png", bbox_inches="tight")
+    plt.show()
+
+
 def eval(model: SeldModel, dataloader: DataLoader, device: str):
     validator = val.SOValidator(torch.device(device))
     model = model.to(device)
 
     validator(model, dataloader)
+
+    out_dir = Path("plots")
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     plot_hist_error(validator.result_reg.angular_error_per_sample)
     plot_scatter_true_pred(validator.result_reg.y_true, validator.result_reg.y_pred)
@@ -161,19 +236,21 @@ def eval(model: SeldModel, dataloader: DataLoader, device: str):
     plot_grid_micpos_vs_error(
         validator.result_reg.mic_position,
         validator.result_reg.angular_error_per_sample,
+        room_length=12,
+        room_width=12,
     )
     plot_grid_srcpos_vs_error(
-        validator.result_reg.src_position,
-        validator.result_reg.angular_error_per_sample,
+        validator.result_reg.src_position, validator.result_reg.angular_error_per_sample, room_length=12, room_width=12
     )
-    plot_degree_vs_error(validator.result_reg.y_true, validator.result_reg.angular_error_per_sample)
+    plot_degree_vs_error(validator.result_reg.y_true, validator.result_reg.angular_error_per_sample, 10)
+    plot_error_spider_chart(validator.result_reg.y_true, validator.result_reg.angular_error_per_sample, 10)
 
 
 if __name__ == "__main__":
-    model = _load_model_from_checkpoint("/home/turib/thesis/model_weights_rp_rm_reg/checkpoints/epoch_34.ckpt")
+    model = _load_model_from_checkpoint("/home/turib/thesis/model_weights_rs_rm_noisy/checkpoints/epoch_30.ckpt")
     data_loader = init_data_module(
         {
-            "data_path": "/ssd2/en_commonvoice_17.0_rs_rm",
+            "data_path": "/ssd2/en_commonvoice_17.0_rs_rm_noisy",
             "dataset_params": {
                 "duration": 10,
                 "sr": 44100,

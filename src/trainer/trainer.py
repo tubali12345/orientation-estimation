@@ -9,9 +9,9 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from ..data.dataset import AudioOrientation
-from ..seldnet_model import SeldModel
-from .txt_logger import TxtLogger
+from ..data.datasets.dataset_zeroshot import AudioOrientation
+from ..model.seldnet_zeroshot_model import SeldModel
+from .utils.txt_logger import TxtLogger
 from .validator import SOValidator
 
 

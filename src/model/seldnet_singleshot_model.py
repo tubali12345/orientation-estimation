@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.data.audio_processor import AudioProcessor
+from .audio_processor import AudioProcessor
 
 
 class ConvBlock(nn.Module):
@@ -89,7 +89,7 @@ class Encoder(nn.Module):
         return x
 
 
-class SeldModelAnchor(torch.nn.Module):
+class SeldModelSingleShot(torch.nn.Module):
     def __init__(self, params):
         super().__init__()
         self.audio_processor = AudioProcessor(sample_rate=44100, window_size=0.04, window_stride=0.02, n_mels=64)
@@ -103,13 +103,13 @@ class SeldModelAnchor(torch.nn.Module):
             for fc_cnt in range(params["nb_fnn_layers"]):
                 self.fnn_list.append(
                     nn.Linear(
-                        params["fnn_size"] if fc_cnt else self.params["rnn_size"] * 4, params["fnn_size"], bias=True
+                        params["fnn_size"] if fc_cnt else self.params["rnn_size"] * 2, params["fnn_size"], bias=True
                     )
                 )
 
         self.fnn_list.append(
             nn.Linear(
-                params["fnn_size"] if params["nb_fnn_layers"] else self.params["rnn_size"] * 4,
+                params["fnn_size"] if params["nb_fnn_layers"] else self.params["rnn_size"] * 2,
                 self.nb_classes,
                 bias=True,
             )
@@ -120,7 +120,7 @@ class SeldModelAnchor(torch.nn.Module):
         x1 = self.encoder(x1)
         x2 = self.encoder(x2)
 
-        x = torch.cat((x1, x2, x1 - x2, x1 * x2), dim=1)
+        x = torch.cat((x1, x2), dim=1)
 
         for fc_cnt in range(len(self.fnn_list)):
             x = self.fnn_list[fc_cnt](x)
@@ -128,53 +128,3 @@ class SeldModelAnchor(torch.nn.Module):
                 x = F.relu(x)
 
         return x
-
-
-# class SeldModelAnchor(torch.nn.Module):
-#     def __init__(self, params):
-#         super().__init__()
-#         self.audio_processor = AudioProcessor(sample_rate=44100, window_size=0.04, window_stride=0.02, n_mels=64)
-#         self.nb_classes = params["nb_classes"]
-#         self.params = params
-
-#         self.encoder = Encoder(params)
-
-#         self.cross_att = torch.nn.MultiheadAttention(
-#             embed_dim=params["rnn_size"],
-#             num_heads=1,
-#             dropout=params["dropout_rate"],
-#             batch_first=True,
-#         )
-
-#         self.fnn_list = torch.nn.ModuleList()
-#         if params["nb_fnn_layers"]:
-#             for fc_cnt in range(params["nb_fnn_layers"]):
-#                 self.fnn_list.append(
-#                     nn.Linear(params["fnn_size"] if fc_cnt else self.params["rnn_size"], params["fnn_size"], bias=True)
-#                 )
-
-#         self.fnn_list.append(
-#             nn.Linear(
-#                 params["fnn_size"] if params["nb_fnn_layers"] else self.params["rnn_size"],
-#                 self.nb_classes,
-#                 bias=True,
-#             )
-#         )
-
-#     def forward(self, x1, x2):
-
-#         x1 = self.encoder(x1)
-#         x2 = self.encoder(x2)
-
-#         x1 = x1.unsqueeze(1)
-#         x2 = x2.unsqueeze(1)
-
-#         x, _ = self.cross_att(x1, x2, x2)
-#         x = x.squeeze(1)
-
-#         for fc_cnt in range(len(self.fnn_list)):
-#             x = self.fnn_list[fc_cnt](x)
-#             if fc_cnt < len(self.fnn_list) - 1:
-#                 x = F.relu(x)
-
-#         return x

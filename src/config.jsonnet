@@ -1,22 +1,22 @@
 {
-    pretrained_model_path: "./model_weights_rp/checkpoints/epoch_46.pth",
+    pretrained_model_path: "/home/turib/thesis/3_1_dev_split0_multiaccdoa_foa_model.h5",
     trainer_params: {
-        max_epochs: 100,
-        device: "cuda:1",
-        root_dir: "./model_weights_rp/",
+        max_epochs: 300,
+        device: "cuda:2",
+        root_dir: "./model_weights_md/",
     },
     lr_scheduler_params: {
         scheduler: "StepLR",
         initial_lr: 0.001,
         frequency: "epoch",
         params: {
-            step_size: 5,
-            gamma: 0.8,
+            step_size: 6,
+            gamma: 0.92,
         },
     },
     data_params: {
-        data_dir_path_train: "datapath",
-        data_dir_path_valid: "datapath",
+        data_dir_path_train: "/ssd2/en_commonvoice_17.0_rs_rm_md",
+        data_dir_path_valid: "/ssd2/en_commonvoice_17.0_rs_rm_md",
         dataset_params: {
             duration: 10,
             sr: 44100,
@@ -25,7 +25,7 @@
             batch_size: 16,
             num_workers: 12,
             prefetch_factor: 4,
-            pin_memory: true,
+            pin_memory: false,
         },
         feature_params: {
             fs:44100,
@@ -38,7 +38,7 @@
     model_params: {
         modality:'audio', 
         multi_accdoa: false,  
-        nb_classes: 4, 
+        nb_classes: 2, 
         nb_channels: 6,
         nb_mel_bins:64,
 

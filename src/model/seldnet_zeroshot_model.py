@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.data.audio_processor import AudioProcessor
+from .audio_processor import AudioProcessor
 
 
 class ConvBlock(nn.Module):
@@ -21,7 +21,7 @@ class ConvBlock(nn.Module):
         return x
 
 
-class SeldModel(torch.nn.Module):
+class SeldModelZeroShot(torch.nn.Module):
     def __init__(self, params, in_vid_feat_shape=None):
         super().__init__()
         self.audio_processor = AudioProcessor(sample_rate=44100, window_size=0.04, window_stride=0.02, n_mels=64)
@@ -55,7 +55,7 @@ class SeldModel(torch.nn.Module):
 
         self.mhsa_block_list = nn.ModuleList()
         self.layer_norm_list = nn.ModuleList()
-        for mhsa_cnt in range(params["nb_self_attn_layers"]):
+        for _ in range(params["nb_self_attn_layers"]):
             self.mhsa_block_list.append(
                 nn.MultiheadAttention(
                     embed_dim=self.params["rnn_size"],
@@ -66,26 +66,12 @@ class SeldModel(torch.nn.Module):
             )
             self.layer_norm_list.append(nn.LayerNorm(self.params["rnn_size"]))
 
-        # fusion layers
-        if in_vid_feat_shape is not None:
-            self.visual_embed_to_d_model = nn.Linear(
-                in_features=int(in_vid_feat_shape[2] * in_vid_feat_shape[3]), out_features=self.params["rnn_size"]
-            )
-            self.transformer_decoder_layer = nn.TransformerDecoderLayer(
-                d_model=self.params["rnn_size"], nhead=self.params["nb_heads"], batch_first=True
-            )
-            self.transformer_decoder = nn.TransformerDecoder(
-                self.transformer_decoder_layer, num_layers=self.params["nb_transformer_layers"]
-            )
-
         self.fnn_list = torch.nn.ModuleList()
         if params["nb_fnn_layers"]:
             for fc_cnt in range(params["nb_fnn_layers"]):
                 self.fnn_list.append(
                     nn.Linear(params["fnn_size"] if fc_cnt else self.params["rnn_size"], params["fnn_size"], bias=True)
                 )
-        # shape of x: (batch_size, frames, rnn_size)
-        # reduce the time axis with average max pooling
         self.max_pool = nn.AdaptiveMaxPool1d(1)
 
         self.fnn_list.append(
@@ -94,8 +80,7 @@ class SeldModel(torch.nn.Module):
             )
         )
 
-    def forward(self, x, vid_feat=None):
-        """input: (batch_size, mic_channels, time_steps, mel_bins)"""
+    def forward(self, x):
         for conv_cnt in range(len(self.conv_block_list)):
             x = self.conv_block_list[conv_cnt](x)
 
@@ -111,29 +96,9 @@ class SeldModel(torch.nn.Module):
             x = x + x_attn_in
             x = self.layer_norm_list[mhsa_cnt](x)
 
-        if vid_feat is not None:
-            vid_feat = vid_feat.view(vid_feat.shape[0], vid_feat.shape[1], -1)  # b x 50 x 49
-            vid_feat = self.visual_embed_to_d_model(vid_feat)
-            x = self.transformer_decoder(x, vid_feat)
-
-        # shape of x: (batch_size, frames, rnn_size)
-        # reduce the time axis with average max pooling
         x = x.transpose(1, 2).contiguous()
         x = self.max_pool(x).squeeze(-1)
 
         for fnn_cnt in range(len(self.fnn_list) - 1):
             x = self.fnn_list[fnn_cnt](x)
-        doa = self.fnn_list[-1](x)
-        # the below-commented code applies tanh for doa and relu for distance estimates respectively in multi-accdoa scenarios.
-        # they can be uncommented and used, but there is no significant changes in the results.
-        # doa = doa.reshape(doa.size(0), doa.size(1), 3, 4, 13)
-        # doa1 = doa[:, :, :, :3, :]
-        # dist = doa[:, :, :, 3:, :]
-
-        # doa1 = self.doa_act(doa1)
-        # dist = self.dist_act(dist)
-        # doa2 = torch.cat((doa1, dist), dim=3)
-
-        # doa2 = doa2.reshape((doa.size(0), doa.size(1), -1))
-        # return doa2
-        return doa
+        return self.fnn_list[-1](x)

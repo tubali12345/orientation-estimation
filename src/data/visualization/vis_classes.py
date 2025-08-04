@@ -2,7 +2,8 @@ import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
-from dataset import AudioOrientation
+
+from data.datasets.base_dataset import BaseOrientationDataset
 
 # Define colors for each quadrant
 colors = {0: "red", 1: "blue", 2: "green", 3: "yellow"}
@@ -15,7 +16,7 @@ X, Y = R * np.cos(T), R * np.sin(T)
 
 # Compute orientation in degrees and apply labeling
 angles = np.degrees(T)
-labels = np.vectorize(AudioOrientation._orientation_to_label)(angles)
+labels = np.vectorize(BaseOrientationDataset._orientation_to_label)(angles)
 
 # Plot the circle
 fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
