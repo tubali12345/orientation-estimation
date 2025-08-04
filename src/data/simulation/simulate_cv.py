@@ -6,10 +6,9 @@ from typing import Optional
 
 from tqdm import tqdm
 
-from data.directivity.directivity_data import MatData, PyData
-
-from .config_utils import RoomParams, load_config
-from .simulate.simulate_zeroshot import simulate_and_save
+from src.data.directivity.directivity_data import MatData, PyData
+from src.data.simulation.config_utils import RoomParams, load_config
+from src.data.simulation.simulate.simulate_zeroshot import simulate_and_save
 
 
 def _parse_args() -> dict:
@@ -36,7 +35,7 @@ def simulate_cv(
     train_output_dir_path.mkdir(parents=True, exist_ok=True)
 
     if test_set_size:
-        test_output_dir_path = Path(output_dir_path).parent / "test"
+        test_output_dir_path = Path(output_dir_path) / "test"
         test_output_dir_path.mkdir(parents=True, exist_ok=True)
 
     measured_directivities: list[PyData] = [

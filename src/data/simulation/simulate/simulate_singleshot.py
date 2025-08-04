@@ -4,7 +4,7 @@ from typing import Optional
 import numpy as np
 import pyroomacoustics as pra
 
-from data.directivity.directivity_data import PyData
+from src.data.directivity.directivity_data import PyData
 
 from ..config_utils import RoomParams
 from ..utils.audio_utils import load_audio, save_audio
