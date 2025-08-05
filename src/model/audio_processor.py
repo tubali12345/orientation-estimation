@@ -1,25 +1,36 @@
+from typing import TypedDict
+
 import torch
 import torch.nn as nn
 from librosa import filters
 
 
+class AudioProcessorParams(TypedDict):
+    sample_rate: int
+    window_size: float
+    window_stride: float
+    n_mels: int
+    nb_channels: int
+    preemphasis: float
+
+
 class AudioProcessor(nn.Module):
 
-    def __init__(self, sample_rate, window_size, window_stride, n_mels, preemphasis=0.97):
+    def __init__(self, params: AudioProcessorParams):
         super(AudioProcessor, self).__init__()
 
-        self.n_mels = n_mels
-        self.sample_rate = sample_rate
-        self.window_size = window_size
-        self.window_stride = window_stride
-        self.win_len = int(sample_rate * window_size)  # 400
-        self.hop = int(sample_rate * window_stride)  # 160
-        self.preemphasis = preemphasis
-        self.nb_channels = 6
+        self.n_mels = params["n_mels"]
+        self.sample_rate = params["sample_rate"]
+        self.window_size = params["window_size"]
+        self.window_stride = params["window_stride"]
+        self.win_len = int(self.sample_rate * self.window_size)  # 400
+        self.hop = int(self.sample_rate * self.window_stride)  # 160
+        self.preemphasis = params["preemphasis"]
+        self.nb_channels = params["nb_channels"]
         self.n_fft = self._next_greater_power_of_2(self.win_len)
 
         self.register_buffer("window", torch.hann_window(self.win_len))
-        mel_basis = filters.mel(sr=sample_rate, n_fft=self.n_fft, n_mels=n_mels)
+        mel_basis = filters.mel(sr=self.sample_rate, n_fft=self.n_fft, n_mels=self.n_mels)
         self.register_buffer("mel_basis", torch.FloatTensor(mel_basis))
 
     @staticmethod
@@ -27,9 +38,6 @@ class AudioProcessor(nn.Module):
         return 2 ** (x - 1).bit_length()
 
     def forward(self, padded_audio):
-        # if self.preemphasis > 0:
-        #     padded_audio = padded_audio[:, 1:] - self.preemphasis * padded_audio[:, :-1]
-        #     audio_size.add_(-1)
         nb_feat_frames = int(padded_audio.shape[1] / float(self.hop))
         spectra = []
 

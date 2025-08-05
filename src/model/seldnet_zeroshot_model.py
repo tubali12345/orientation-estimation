@@ -1,11 +1,28 @@
 """This file is a modified copy of https://github.com/partha2409/DCASE2024_seld_baseline/blob/main/seldnet_model.py"""
 
+from typing import TypedDict
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .audio_processor import AudioProcessor
+from .audio_processor import AudioProcessor, AudioProcessorParams
+
+
+class ZeroShotModelParams(TypedDict):
+    nb_classes: int
+    nb_channels: int
+    nb_cnn2d_filt: int
+    f_pool_size: list[int]
+    dropout_rate: float
+    nb_rnn_layers: int
+    rnn_size: int
+    nb_self_attn_layers: int
+    nb_heads: int
+    nb_fnn_layers: int
+    fnn_size: int
+    nb_mel_bins: int
 
 
 class ConvBlock(nn.Module):
@@ -22,40 +39,40 @@ class ConvBlock(nn.Module):
 
 
 class SeldModelZeroShot(torch.nn.Module):
-    def __init__(self, params, in_vid_feat_shape=None):
+    def __init__(self, model_params: ZeroShotModelParams, audio_processor_params: AudioProcessorParams):
         super().__init__()
-        self.audio_processor = AudioProcessor(sample_rate=44100, window_size=0.04, window_stride=0.02, n_mels=64)
-        self.nb_classes = params["nb_classes"]
-        self.params = params
+        self.audio_processor = AudioProcessor(audio_processor_params)
+        self.nb_classes = model_params["nb_classes"]
+        self.params = model_params
         self.conv_block_list = nn.ModuleList()
-        if len(params["f_pool_size"]):
-            for conv_cnt in range(len(params["f_pool_size"])):
+        if len(model_params["f_pool_size"]):
+            for conv_cnt in range(len(model_params["f_pool_size"])):
                 self.conv_block_list.append(
                     ConvBlock(
-                        in_channels=params["nb_cnn2d_filt"] if conv_cnt else params["nb_channels"],
-                        out_channels=params["nb_cnn2d_filt"],
+                        in_channels=model_params["nb_cnn2d_filt"] if conv_cnt else model_params["nb_channels"],
+                        out_channels=model_params["nb_cnn2d_filt"],
                     )
                 )
                 self.conv_block_list.append(
-                    nn.MaxPool2d((params["f_pool_size"][conv_cnt], params["f_pool_size"][conv_cnt]))
+                    nn.MaxPool2d((model_params["f_pool_size"][conv_cnt], model_params["f_pool_size"][conv_cnt]))
                 )
-                self.conv_block_list.append(nn.Dropout2d(p=params["dropout_rate"]))
+                self.conv_block_list.append(nn.Dropout2d(p=model_params["dropout_rate"]))
 
-        self.gru_input_dim = params["nb_cnn2d_filt"] * int(
-            np.floor(params["nb_mel_bins"] / np.prod(params["f_pool_size"]))
+        self.gru_input_dim = model_params["nb_cnn2d_filt"] * int(
+            np.floor(model_params["nb_mel_bins"] / np.prod(model_params["f_pool_size"]))
         )
         self.gru = torch.nn.GRU(
             input_size=self.gru_input_dim,
-            hidden_size=params["rnn_size"],
-            num_layers=params["nb_rnn_layers"],
+            hidden_size=model_params["rnn_size"],
+            num_layers=model_params["nb_rnn_layers"],
             batch_first=True,
-            dropout=params["dropout_rate"],
+            dropout=model_params["dropout_rate"],
             bidirectional=True,
         )
 
         self.mhsa_block_list = nn.ModuleList()
         self.layer_norm_list = nn.ModuleList()
-        for _ in range(params["nb_self_attn_layers"]):
+        for _ in range(model_params["nb_self_attn_layers"]):
             self.mhsa_block_list.append(
                 nn.MultiheadAttention(
                     embed_dim=self.params["rnn_size"],
@@ -67,16 +84,22 @@ class SeldModelZeroShot(torch.nn.Module):
             self.layer_norm_list.append(nn.LayerNorm(self.params["rnn_size"]))
 
         self.fnn_list = torch.nn.ModuleList()
-        if params["nb_fnn_layers"]:
-            for fc_cnt in range(params["nb_fnn_layers"]):
+        if model_params["nb_fnn_layers"]:
+            for fc_cnt in range(model_params["nb_fnn_layers"]):
                 self.fnn_list.append(
-                    nn.Linear(params["fnn_size"] if fc_cnt else self.params["rnn_size"], params["fnn_size"], bias=True)
+                    nn.Linear(
+                        model_params["fnn_size"] if fc_cnt else self.params["rnn_size"],
+                        model_params["fnn_size"],
+                        bias=True,
+                    )
                 )
         self.max_pool = nn.AdaptiveMaxPool1d(1)
 
         self.fnn_list.append(
             nn.Linear(
-                params["fnn_size"] if params["nb_fnn_layers"] else self.params["rnn_size"], self.nb_classes, bias=True
+                model_params["fnn_size"] if model_params["nb_fnn_layers"] else self.params["rnn_size"],
+                self.nb_classes,
+                bias=True,
             )
         )
 

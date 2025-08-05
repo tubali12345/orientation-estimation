@@ -1,11 +1,32 @@
 """This file is a modified copy of https://github.com/partha2409/DCASE2024_seld_baseline/blob/main/seldnet_model.py"""
 
+from typing import TypedDict
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .audio_processor import AudioProcessor
+from .audio_processor import AudioProcessor, AudioProcessorParams
+
+
+class EncoderParams(TypedDict):
+    f_pool_size: list[int]
+    nb_channels: int
+    nb_cnn2d_filt: int
+    dropout_rate: float
+    nb_mel_bins: int
+    rnn_size: int
+    nb_rnn_layers: int
+    nb_self_attn_layers: int
+    nb_heads: int
+
+
+class SingleShotModelParams(TypedDict):
+    encoder_params: EncoderParams
+    nb_classes: int
+    nb_fnn_layers: int
+    fnn_size: int
 
 
 class ConvBlock(nn.Module):
@@ -22,9 +43,8 @@ class ConvBlock(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, params: dict):
+    def __init__(self, params: EncoderParams):
         super().__init__()
-        self.params = params
 
         self.conv_block_list = nn.ModuleList()
         if len(params["f_pool_size"]):
@@ -57,13 +77,13 @@ class Encoder(nn.Module):
         for _ in range(params["nb_self_attn_layers"]):
             self.mhsa_block_list.append(
                 nn.MultiheadAttention(
-                    embed_dim=self.params["rnn_size"],
-                    num_heads=self.params["nb_heads"],
-                    dropout=self.params["dropout_rate"],
+                    embed_dim=params["rnn_size"],
+                    num_heads=params["nb_heads"],
+                    dropout=params["dropout_rate"],
                     batch_first=True,
                 )
             )
-            self.layer_norm_list.append(nn.LayerNorm(self.params["rnn_size"]))
+            self.layer_norm_list.append(nn.LayerNorm(params["rnn_size"]))
 
         self.max_pool = nn.AdaptiveMaxPool1d(1)
 
@@ -90,26 +110,31 @@ class Encoder(nn.Module):
 
 
 class SeldModelSingleShot(torch.nn.Module):
-    def __init__(self, params):
+    def __init__(self, model_params: SingleShotModelParams, audio_processor_params: AudioProcessorParams):
         super().__init__()
-        self.audio_processor = AudioProcessor(sample_rate=44100, window_size=0.04, window_stride=0.02, n_mels=64)
-        self.nb_classes = params["nb_classes"]
-        self.params = params
+        self.audio_processor = AudioProcessor(audio_processor_params)
+        self.nb_classes = model_params["nb_classes"]
 
-        self.encoder = Encoder(params)
+        self.encoder = Encoder(model_params["encoder_params"])
 
         self.fnn_list = torch.nn.ModuleList()
-        if params["nb_fnn_layers"]:
-            for fc_cnt in range(params["nb_fnn_layers"]):
+        if model_params["nb_fnn_layers"]:
+            for fc_cnt in range(model_params["nb_fnn_layers"]):
                 self.fnn_list.append(
                     nn.Linear(
-                        params["fnn_size"] if fc_cnt else self.params["rnn_size"] * 2, params["fnn_size"], bias=True
+                        model_params["fnn_size"] if fc_cnt else model_params["encoder_params"]["rnn_size"] * 2,
+                        model_params["fnn_size"],
+                        bias=True,
                     )
                 )
 
         self.fnn_list.append(
             nn.Linear(
-                params["fnn_size"] if params["nb_fnn_layers"] else self.params["rnn_size"] * 2,
+                (
+                    model_params["fnn_size"]
+                    if model_params["nb_fnn_layers"]
+                    else model_params["encoder_params"]["rnn_size"] * 2
+                ),
                 self.nb_classes,
                 bias=True,
             )
