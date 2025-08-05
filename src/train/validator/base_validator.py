@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -6,8 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from ..data.datasets.dataset_zeroshot import AudioOrientation
-from ..model.seldnet_zeroshot_model import SeldModel
+from src.data.datasets.base_dataset import BaseOrientationDataset
 
 
 def _add_ndarrays(a: np.ndarray | None, b: np.ndarray | None) -> np.ndarray | None:
@@ -15,9 +15,7 @@ def _add_ndarrays(a: np.ndarray | None, b: np.ndarray | None) -> np.ndarray | No
         return None
     if a is None:
         return b
-    if b is None:
-        return a
-    return np.concatenate((a, b))
+    return a if b is None else np.concatenate((a, b))
 
 
 @dataclass
@@ -92,7 +90,7 @@ class RegressionResult:
         return self.angular_error / self.total if self.total != 0 else 0.0
 
 
-class SOValidator:
+class BaseValidator(ABC):
     def __init__(self, device: torch.device):
         self.device = device
 
@@ -101,10 +99,14 @@ class SOValidator:
 
         self.criteria = torch.nn.MSELoss(reduction="sum")
 
-    def __call__(self, model: SeldModel, val_loader: DataLoader) -> None:
+    @torch.no_grad()
+    @abstractmethod
+    def validate_batch(self, model: torch.nn.Module, batch) -> tuple[ClassificationResult, RegressionResult]: ...
+
+    def __call__(self, model: torch.nn.Module, val_loader: DataLoader) -> None:
         self.validate(model, val_loader)
 
-    def validate(self, model: SeldModel, val_loader: DataLoader) -> None:
+    def validate(self, model: torch.nn.Module, val_loader: DataLoader) -> None:
         self.on_validation_start()
         model.eval()
 
@@ -124,14 +126,6 @@ class SOValidator:
         self.on_validation_end()
 
     @torch.no_grad()
-    def validate_batch(self, model: SeldModel, batch) -> tuple[ClassificationResult, RegressionResult]:
-        feats, target, mic_positions, src_positions = batch
-        feats, target = feats.to(self.device), target.to(self.device)
-        feats = model.audio_processor(feats)
-        output = model(feats.permute(0, 3, 1, 2))
-        return self._calc_stats(output, target, mic_positions, src_positions)
-
-    @torch.no_grad()
     def _calc_stats(
         self, output: torch.Tensor, target: torch.Tensor, mic_positions, src_positions
     ) -> tuple[ClassificationResult, RegressionResult]:
@@ -147,7 +141,7 @@ class SOValidator:
         output, target = output.to(self.device), target.to(self.device)
 
         target_reg = torch.stack(
-            [torch.tensor(AudioOrientation._orientation_to_xy(orientation.item())) for orientation in target]
+            [torch.tensor(BaseOrientationDataset._orientation_to_xy(orientation.item())) for orientation in target]
         ).to(self.device)
 
         loss = self.criteria(output, target_reg)
@@ -169,10 +163,10 @@ class SOValidator:
         output = torch.stack([xy_to_orientation(*xy) for xy in output])
 
         output_classes = torch.tensor(
-            [AudioOrientation._orientation_to_label(orientation.item()) for orientation in output]
+            [BaseOrientationDataset._orientation_to_label(orientation.item()) for orientation in output]
         )
         target_classes = torch.tensor(
-            [AudioOrientation._orientation_to_label(orientation.item()) for orientation in target]
+            [BaseOrientationDataset._orientation_to_label(orientation.item()) for orientation in target]
         )
 
         batch_result_class.correct = int(torch.sum(output_classes == target_classes).item())

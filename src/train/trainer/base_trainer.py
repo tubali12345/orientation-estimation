@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
@@ -6,13 +7,13 @@ from typing import NamedTuple, Union
 import numpy as np
 import pytorch_lightning.loggers as pl_loggers
 import torch
-import torch.nn.functional as F
 from tqdm import tqdm
 
-from ..data.datasets.dataset_zeroshot import AudioOrientation
-from ..model.seldnet_zeroshot_model import SeldModel
-from .utils.txt_logger import TxtLogger
-from .validator import SOValidator
+from src.model.seldnet_singleshot_model import SeldModelSingleShot
+from src.model.seldnet_zeroshot_model import SeldModelZeroShot
+
+from ..utils.txt_logger import TxtLogger
+from ..validator.base_validator import BaseValidator
 
 
 class Frequency(Enum):
@@ -32,14 +33,15 @@ class EpochStats:
     running_grad: float = 0
 
 
-class Trainer:
+class BaseTrainer(ABC):
     def __init__(
         self,
         *,
-        model: SeldModel,
+        model: Union[SeldModelSingleShot, SeldModelZeroShot],
         optimizer: torch.optim.Optimizer,
         criterion: torch.nn.Module,
         scheduler: Scheduler,
+        validator: BaseValidator,
         max_epochs: int,
         device: torch.device,
         root_dir: Path,
@@ -67,7 +69,12 @@ class Trainer:
 
         self.epoch_stats = EpochStats()
 
-        self.validator = SOValidator(device)
+        self.validator = validator
+
+    @abstractmethod
+    def train_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
+        """Performs a single training step on the model with the given batch and returns the loss."""
+        ...
 
     def fit(self, train_loader: torch.utils.data.DataLoader, val_loader: torch.utils.data.DataLoader) -> None:
         self.on_fit_start()
@@ -91,22 +98,6 @@ class Trainer:
             except Exception as e:
                 print(e)
         self.on_epoch_end()
-
-    def train_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
-        feats, target = batch
-        target = torch.stack(
-            [torch.tensor(AudioOrientation._orientation_to_xy(orientation.item())) for orientation in target]
-        )
-        feats, target = feats.to(self.device), target.to(self.device)
-        feats = self.model.audio_processor(feats)
-        output = self.model(feats.permute(0, 3, 1, 2))
-        loss = self.criterion(output, target)
-
-        angular_error = self._calc_mean_angular_error(output, target)
-
-        if batch_idx % self.log_every_n_steps == 0:
-            self.log_dict({"train_loss": loss.item(), "angular_error": angular_error}, unit=Frequency.step)
-        return loss
 
     @staticmethod
     def _calc_mean_angular_error(output: torch.Tensor, target: torch.Tensor) -> float:
@@ -139,13 +130,6 @@ class Trainer:
         self.current_epoch += 1
         self.txt_logger.log("-" * 50 + f"\nStarting epoch {self.current_epoch}, current lr: {self.current_lr}")
 
-        # if self.epoch_stats.step_in_epoch == 0:
-        #     self.current_epoch += 1
-        #     self.txt_logger.log("-" * 50 + f"\nStarting epoch {self.current_epoch}, current lr: {self.current_lr}")
-        #     print(f"Starting epoch {self.current_epoch}...")
-        # else:
-        #     print(f"Resuming epoch {self.current_epoch} from step {self.epoch_stats.step_in_epoch}")
-
     def on_epoch_end(self) -> None:
         """Log metrics, save model, etc."""
         self.save_checkpoint(f"epoch_{self.current_epoch}")
@@ -164,9 +148,6 @@ class Trainer:
         if self.scheduler.frequency == Frequency.step:
             self.scheduler.scheduler.step()
             self.current_lr = self.scheduler.scheduler.get_last_lr()[0]
-
-        # if self.global_step % self.save_every_n_steps == 0 and self.global_step != 0 and self.cons_invalid_loss == 0:
-        #     self.save_partial_checkpoint("partial")
 
     def on_validation_end(self) -> None:
         # log validation metrics
@@ -258,10 +239,13 @@ class Trainer:
     @property
     def log_dir(self):
         if self.logger:
-            if not isinstance(self.logger, (pl_loggers.TensorBoardLogger, pl_loggers.CSVLogger)):
-                dirpath = self.logger.save_dir
-            else:
-                dirpath = self.logger.log_dir
+            return (
+                self.logger.log_dir
+                if isinstance(
+                    self.logger,
+                    (pl_loggers.TensorBoardLogger, pl_loggers.CSVLogger),
+                )
+                else self.logger.save_dir
+            )
         else:
-            dirpath = self.root_dir
-        return dirpath
+            return self.root_dir
