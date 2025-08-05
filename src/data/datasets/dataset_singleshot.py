@@ -25,7 +25,7 @@ class ZeroShotOrientationDataset(BaseOrientationDataset):
     @classmethod
     def from_config(
         cls,
-        dataset_path: Path,
+        dataset_path: str,
         audio_params: AudioParams,
         max_samples: Optional[int] = None,
     ) -> "ZeroShotOrientationDataset":
@@ -37,8 +37,8 @@ class ZeroShotOrientationDataset(BaseOrientationDataset):
         )
 
     @staticmethod
-    def _find_samples(dataset_path: Path, max_samples: Optional[int], audio_format: str) -> Iterator[DatasetSample]:
-        wav_parent_paths = {audio_path.parent for audio_path in dataset_path.rglob(f"*.{audio_format}")}
+    def _find_samples(dataset_path: str, max_samples: Optional[int], audio_format: str) -> Iterator[DatasetSample]:
+        wav_parent_paths = {audio_path.parent for audio_path in Path(dataset_path).rglob(f"*.{audio_format}")}
         for i, audio_parent_path in enumerate(tqdm(wav_parent_paths, desc="Finding samples")):
             if sample := ZeroShotOrientationDataset._get_sample(audio_parent_path, audio_format):
                 yield sample
