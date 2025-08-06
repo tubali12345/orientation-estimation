@@ -2,7 +2,7 @@ import argparse
 import concurrent.futures as cf
 import random
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from tqdm import tqdm
 
@@ -21,76 +21,62 @@ def _parse_args() -> dict:
 
 
 def simulate_cv(
-    dataset_path: str | Path,
-    output_dir_path: str | Path,
-    measured_directivity_dir_path: str | Path,
+    dataset_path: Union[str, Path],
+    output_dir_path: Union[str, Path],
+    measured_directivity_dir_path: Union[str, Path],
     sr: int,
     room_params: RoomParams,
     test_set_size: float = 0.1,
     max_workers: int = 16,
-    noise_dir_path: Optional[str | Path] = None,
+    noise_dir_path: Optional[Union[str, Path]] = None,
 ) -> None:
     dataset_path = Path(dataset_path)
-    train_output_dir_path = Path(output_dir_path) / "train"
-    train_output_dir_path.mkdir(parents=True, exist_ok=True)
+    output_dir_path = Path(output_dir_path)
+    measured_directivity_dir_path = Path(measured_directivity_dir_path)
 
-    if test_set_size:
-        test_output_dir_path = Path(output_dir_path) / "test"
-        test_output_dir_path.mkdir(parents=True, exist_ok=True)
+    train_dir = output_dir_path / "train"
+    train_dir.mkdir(parents=True, exist_ok=True)
 
-    measured_directivities: list[PyData] = [
-        MatData.from_file(measured_directivity_file_path).to_pydata()
-        for measured_directivity_file_path in list(Path(measured_directivity_dir_path).rglob("*.mat"))
-    ]
+    test_dir = output_dir_path / "test" if test_set_size else None
+    if test_dir:
+        test_dir.mkdir(parents=True, exist_ok=True)
+
+    measured_directivities = [MatData.from_file(f).to_pydata() for f in measured_directivity_dir_path.rglob("*.mat")]
 
     audio_paths = list(dataset_path.rglob("*.mp3"))
     random.shuffle(audio_paths)
 
-    if test_set_size:
-        test_audio_paths = audio_paths[: int(len(audio_paths) * test_set_size)]
+    test_audio_paths = audio_paths[: int(len(audio_paths) * test_set_size)] if test_set_size else None
 
     train_audio_paths = audio_paths[int(len(audio_paths) * test_set_size) :]
 
     noise_list = (
-        [str(path) for path in tqdm(Path(noise_dir_path).rglob("*.wav"), desc="Gathering noises")]
+        [str(p) for p in tqdm(Path(noise_dir_path).rglob("*.wav"), desc="Gathering noises")]
         if noise_dir_path
         else None
     )
 
-    if test_set_size:
+    def simulate_batch(audio_paths, out_dir, desc):
         with cf.ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(
                     simulate_and_save,
                     dataset_path,
-                    test_output_dir_path,
+                    out_dir,
                     audio_path,
                     random.choice(measured_directivities),
                     sr,
                     room_params,
                     noise_list,
                 )
-                for audio_path in tqdm(test_audio_paths, desc="Submitting jobs")
+                for audio_path in tqdm(audio_paths, desc=f"Submitting jobs for {desc}")
             ]
-            for future in tqdm(cf.as_completed(futures), total=len(futures), desc="Simulating test dataset"):
+            for future in tqdm(cf.as_completed(futures), total=len(futures), desc=f"Simulating {desc} dataset"):
                 future.result()
 
-    with cf.ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(
-                simulate_and_save,
-                dataset_path,
-                train_output_dir_path,
-                audio_path,
-                random.choice(measured_directivities),
-                sr,
-                room_params,
-                noise_list,
-            )
-            for audio_path in tqdm(train_audio_paths, desc="Submitting jobs")
-        ]
-        for future in tqdm(cf.as_completed(futures), total=len(futures), desc="Simulating train dataset"):
-            future.result()
+    if test_audio_paths:
+        simulate_batch(test_audio_paths, test_dir, "test")
+    simulate_batch(train_audio_paths, train_dir, "train")
 
 
 if __name__ == "__main__":
