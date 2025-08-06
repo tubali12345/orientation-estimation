@@ -35,7 +35,7 @@ def simulate_and_save(
             return
 
         room_config = {
-            "p": [np.random.uniform(3, 12), np.random.uniform(3, 12), np.random.uniform(2, 6)],
+            # "p": [np.random.uniform(3, 12), np.random.uniform(3, 12), np.random.uniform(2, 6)],
             "p": room_params["p"],
             "fs": sr,
             "max_order": room_params["max_order"],
