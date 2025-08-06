@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from typing import Optional, Tuple
 
 import _jsonnet
@@ -30,14 +31,21 @@ def init_seld_model(
     if pretrained_model_path:
         print(f"Loading pretrained model from {pretrained_model_path}")
         state_dict = torch.load(pretrained_model_path, map_location="cpu")
-        del state_dict["fnn_list.1.weight"]
-        del state_dict["fnn_list.1.bias"]
-        del state_dict["conv_block_list.0.conv.weight"]
+        state_dict = (
+            _delete_or_rename_unmatched_keys(state_dict) if Path(pretrained_model_path).suffix == ".h5" else state_dict
+        )
         model.load_state_dict(state_dict, strict=False)
     else:
         print("No pretrained model provided, initializing with random weights")
     summary(model, depth=2)
     return model
+
+
+def _delete_or_rename_unmatched_keys(state_dict: dict) -> dict:
+    del state_dict["fnn_list.1.weight"]
+    del state_dict["fnn_list.1.bias"]
+    del state_dict["conv_block_list.0.conv.weight"]
+    return state_dict
 
 
 def init_trainer(trainer_config: dict, lr_scheduler_config: dict, model: SeldModelZeroShot) -> ZeroShotTrainer:
