@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import Literal, Optional, TypedDict
 
 import _jsonnet
 
@@ -18,6 +18,7 @@ class SimulationConfig(TypedDict):
     output_dir_path: str
     measured_directivity_dir_path: str
     noise_dir_path: Optional[str]
+    simulation_type: Literal["singleshot", "zeroshot"]
     sr: int
     room_params: RoomParams
 
