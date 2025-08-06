@@ -92,7 +92,7 @@ class SingleShotOrientationDataset(BaseOrientationDataset):
 
     @staticmethod
     def _get_label(orientation_1: float, orientation_2: float) -> float:
-        return orientation_2 - orientation_1
+        return (orientation_2 - orientation_1) % 360
 
     @staticmethod
     def collate_fn(
