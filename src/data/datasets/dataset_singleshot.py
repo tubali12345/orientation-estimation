@@ -2,6 +2,7 @@ import json
 import random
 from dataclasses import dataclass
 from pathlib import Path
+from re import S
 from typing import Iterator, Optional
 
 import numpy as np
@@ -18,7 +19,7 @@ from .base_dataset import (
 
 
 @dataclass
-class ZeroShotOrientationDataset(BaseOrientationDataset):
+class SingleShotOrientationDataset(BaseOrientationDataset):
     dataset_samples: list[DatasetSample]
     audio_params: AudioParams
 
@@ -28,7 +29,7 @@ class ZeroShotOrientationDataset(BaseOrientationDataset):
         dataset_path: str,
         audio_params: AudioParams,
         max_samples: Optional[int] = None,
-    ) -> "ZeroShotOrientationDataset":
+    ) -> "SingleShotOrientationDataset":
         dataset_samples = list(cls._find_samples(dataset_path, max_samples, audio_params.format))
         random.shuffle(dataset_samples)
         return cls(
@@ -40,7 +41,7 @@ class ZeroShotOrientationDataset(BaseOrientationDataset):
     def _find_samples(dataset_path: str, max_samples: Optional[int], audio_format: str) -> Iterator[DatasetSample]:
         wav_parent_paths = {audio_path.parent for audio_path in Path(dataset_path).rglob(f"*.{audio_format}")}
         for i, audio_parent_path in enumerate(tqdm(wav_parent_paths, desc="Finding samples")):
-            if sample := ZeroShotOrientationDataset._get_sample(audio_parent_path, audio_format):
+            if sample := SingleShotOrientationDataset._get_sample(audio_parent_path, audio_format):
                 yield sample
             if max_samples is not None and i >= max_samples:
                 break
@@ -75,7 +76,7 @@ class ZeroShotOrientationDataset(BaseOrientationDataset):
     def _get_sample(folder_path: Path, audio_format: str) -> DatasetSample | None:
         audio_paths = list(folder_path.glob(f"*.{audio_format}"))
         metadata_paths = [folder_path / f"{audio_path.stem}_metadata.json" for audio_path in audio_paths]
-        metadatas = [ZeroShotOrientationDataset._load_json(path) for path in metadata_paths]
+        metadatas = [SingleShotOrientationDataset._load_json(path) for path in metadata_paths]
 
         if not (all(path.exists() for path in metadata_paths) and len(audio_paths) == 2):
             return

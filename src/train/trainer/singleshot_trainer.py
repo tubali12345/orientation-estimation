@@ -5,7 +5,7 @@ from src.data.datasets.base_dataset import BaseOrientationDataset
 from .base_trainer import BaseTrainer, Frequency
 
 
-class ZeroShotTrainer(BaseTrainer):
+class SingleShotTrainer(BaseTrainer):
     def train_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
         wav1, wav2, target, _, _ = batch
         target = torch.stack(
