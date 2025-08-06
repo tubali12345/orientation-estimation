@@ -16,22 +16,26 @@ from .utils import sample_speaker_position, save_metadata
 def simulate_and_save(
     dataset_path: Path,
     output_dir_path: Path,
-    audio_path: Path,
+    audio_path1: Path,
+    audio_path2: Path,
     measured_directivity_data: PyData,
     sr: int,
     room_params: RoomParams,
     noise_list: Optional[list] = None,
 ) -> None:
     try:
-        file_out_dir = output_dir_path / audio_path.relative_to(dataset_path).parent / audio_path.stem
-        audio_out_path = file_out_dir / f"{audio_path.stem}.wav"
+        file_out_dir = (
+            output_dir_path / audio_path1.relative_to(dataset_path).parent / f"{audio_path1.stem}_{audio_path2.stem}"
+        )
 
-        if file_out_dir.exists() and len(list(file_out_dir.glob("*.wav"))):
+        if file_out_dir.exists() and len(list(file_out_dir.glob("*.wav"))) == 2:
             return
 
-        audio = load_audio(audio_path, sampling_rate=sr, min_sample_rate=sr)
-
-        if audio is None:
+        audios = {
+            audio_path1.stem: load_audio(audio_path1, sampling_rate=sr, min_sample_rate=sr, max_duration=15),
+            audio_path2.stem: load_audio(audio_path2, sampling_rate=sr, min_sample_rate=sr, max_duration=15),
+        }
+        if any(audio is None for audio in audios.values()):
             return
 
         room_config = {
@@ -70,7 +74,7 @@ def simulate_and_save(
         relative_orientation = [np.random.uniform(0, 360)]
         absolute_orientation = [(mic_src_angle + relative_orientation[0]) % 360]
 
-        for orientation in [[mic_src_angle], absolute_orientation]:
+        for orientation, audio_stem in zip([[mic_src_angle], absolute_orientation], audios.keys()):
             hrtf = pra.MeasuredDirectivity(
                 orientation=pra.Rotation3D(orientation, rot_order="z"),
                 grid=measured_directivity_data.grid,
@@ -79,7 +83,7 @@ def simulate_and_save(
             )
 
             mic_signals = simulate_orientation(
-                audio,
+                audios[audio_stem],  # type: ignore
                 hrtf,
                 room=pra.ShoeBox(**room_config),
                 mic=mic,
@@ -88,23 +92,23 @@ def simulate_and_save(
                 noise_list=noise_list,
             )
 
-            audio_out_path = file_out_dir / f"{audio_path.stem}_{round(orientation[0], 4)}.wav"
+            audio_out_path = file_out_dir / f"{audio_stem}.wav"
 
             file_out_dir.mkdir(parents=True, exist_ok=True)
             save_audio(audio_out_path, mic_signals.T, sr)
             facing_mic = 1 if orientation[0] == mic_src_angle else 0
             save_metadata(
                 file_out_dir,
-                audio_out_path.stem,
+                audio_stem,
                 {
                     "orientation": orientation,
                     "facing_mic": facing_mic,
                     "source_position": source_position,
                     "mic_position": mic_position,
-                    "room_params": room_params["p"],
+                    "room_params": room_config["p"],
                 },
             )
     except Exception as e:
         print(
-            f"Failed to simulate {audio_path} with source position {source_position}, mic position {mic_position}, relative orientation {relative_orientation} with error: {e}"
+            f"Failed to simulate {file_out_dir.stem} with source position {source_position}, mic position {mic_position}, relative orientation {relative_orientation} with error: {e}"
         )
