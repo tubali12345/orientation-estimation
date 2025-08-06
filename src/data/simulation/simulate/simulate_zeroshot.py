@@ -98,7 +98,12 @@ def simulate_and_save(
         save_metadata(
             file_out_dir,
             audio_out_path.stem,
-            {"orientation": relative_orientation, "source_position": source_position, "mic_position": mic_position},
+            {
+                "orientation": relative_orientation,
+                "source_position": source_position,
+                "mic_position": mic_position,
+                "room_params": room_config["p"],
+            },
         )
     except Exception as e:
         print(f"Failed to simulate {audio_path} with error: {e}")
