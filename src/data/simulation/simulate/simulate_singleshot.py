@@ -54,6 +54,16 @@ def simulate_and_save(
             1.5,
         ]
 
+        noise_position = (
+            [
+                np.random.uniform(min_dist_from_wall, room_config["p"][0] - min_dist_from_wall),
+                np.random.uniform(min_dist_from_wall, room_config["p"][1] - min_dist_from_wall),
+                1.5,
+            ]
+            if noise_list
+            else None
+        )
+
         source_position = [
             *sample_speaker_position(
                 room_x_length=room_config["p"][0],
@@ -90,6 +100,7 @@ def simulate_and_save(
                 source_position=source_position,
                 plot=False,
                 noise_list=noise_list,
+                noise_position=noise_position,
             )
 
             audio_out_path = file_out_dir / f"{audio_stem}.wav"
