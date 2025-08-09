@@ -1,6 +1,5 @@
 import random
 from typing import List, Optional
-from wave import Wave_read
 
 import matplotlib.pyplot as plt
 import numpy as np
