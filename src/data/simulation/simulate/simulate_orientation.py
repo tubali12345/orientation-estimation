@@ -49,9 +49,8 @@ def simulate_orientation(
         source_position = DEFAULT_SOURCE_POSITION
     if noise_list is not None:
         assert noise_position is not None, "Noise position must be provided if noise list is given."
-        noise, noise_delay = get_random_noise(noise_list, max_len=len(signal), sr=room.fs)
+        noise, noise_delay = _get_noise(noise_list, signal, room.fs)
         room.add_source(noise_position, signal=noise, delay=noise_delay)
-
     room.add_microphone_array(mic)
     room.add_source(source_position, directivity=source_directivity, signal=signal)
     room.compute_rir()
@@ -62,6 +61,19 @@ def simulate_orientation(
     assert room.mic_array is not None, "Room simulation failed, no microphone array found."
     assert room.mic_array.signals is not None, "Room simulation failed, no signals found."
     return room.mic_array.signals
+
+
+def _get_noise(noise_list: list[str], signal: np.ndarray, sr: int) -> tuple[np.ndarray, int]:
+    noise, noise_delay = get_random_noise(noise_list, max_len=len(signal), sr=sr)
+    signal_rms = np.sqrt(np.mean(signal**2))
+    noise_rms = np.sqrt(np.mean(noise**2))
+    current_snr_db = 20 * np.log10(signal_rms / noise_rms) if noise_rms > 0 else float("inf")
+    if not (15 <= current_snr_db <= 25):
+        use_snr_db = random.uniform(15, 25)
+    if use_snr_db is not None and noise_rms > 0:
+        desired_noise_rms = signal_rms / (10 ** (use_snr_db / 20))
+        noise = noise * (desired_noise_rms / noise_rms)
+    return noise, noise_delay
 
 
 def _plot_rir(room: pra.room.Room, title: Optional[str] = None) -> None:
