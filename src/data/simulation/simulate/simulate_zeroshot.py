@@ -35,8 +35,8 @@ def simulate_and_save(
             return
 
         room_config = {
-            # "p": [np.random.uniform(3, 10), np.random.uniform(3, 10), 3],
-            "p": room_params["p"],
+            "p": [np.random.uniform(3, 12), np.random.uniform(3, 12), np.random.uniform(2, 6)],
+            # "p": room_params["p"],
             "fs": sr,
             "max_order": room_params["max_order"],
             "materials": pra.Material(**room_params["materials"]),
