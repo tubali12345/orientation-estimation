@@ -54,15 +54,19 @@ def simulate_vctk(
         else None
     )
 
-    measured_directivities = [MatData.from_file(f).to_pydata() for f in measured_directivity_dir_path.rglob("*.mat")]
+    measured_directivities = [
+        MatData.from_file(f).to_pydata() for f in measured_directivity_dir_path.rglob("*.mat")
+    ]  # if f.stem == "irs_DirPat_a_long_sweep_N9_reg"]
 
     all_wavs = list(dataset_path.rglob("*.wav"))
     all_speakers = {wav.parent.name for wav in all_wavs}
 
-    test_speakers = set()
-    if test_set_size:
-        n_test = max(1, int(len(all_speakers) * test_set_size))
-        test_speakers = set(random.sample(list(all_speakers), n_test))
+    random.seed(42)
+    test_speakers = {"p225", "p252", "p258", "p262", "p263", "p272", "p285", "p293", "p339", "p341"}
+    # test_speakers = set()
+    # if test_set_size:
+    #     n_test = max(1, int(len(all_speakers) * test_set_size))
+    #     test_speakers = set(random.sample(list(all_speakers), n_test))
 
     if simulation_type == "zeroshot":
         simulate_zeroshot(
@@ -127,7 +131,9 @@ def simulate_zeroshot(
                 )
                 for audio_path in tqdm(audio_paths, desc=f"Submitting jobs for {desc}")
             ]
-            for future in tqdm(cf.as_completed(futures), total=len(futures), desc=f"Simulating {desc} dataset"):
+            for future in tqdm(
+                cf.as_completed(futures), total=len(futures), desc=f"Simulating {desc} dataset", smoothing=0
+            ):
                 future.result()
 
     if test_audio_paths:
@@ -188,7 +194,9 @@ def simulate_singleshot(
                 )
                 for audio_path1, audio_path2 in tqdm(audio_path_pairs, desc=f"Submitting jobs for {desc}")
             ]
-            for future in tqdm(cf.as_completed(futures), total=len(futures), desc=f"Simulating {desc} dataset"):
+            for future in tqdm(
+                cf.as_completed(futures), total=len(futures), desc=f"Simulating {desc} dataset", smoothing=0
+            ):
                 future.result()
 
     if test_audio_path_pairs:

@@ -98,6 +98,7 @@ def simulate_and_save(
                 room=pra.ShoeBox(**room_config),
                 mic=mic,
                 source_position=source_position,
+                mic_position=mic_position,
                 plot=False,
                 noise_list=noise_list,
                 noise_position=noise_position,

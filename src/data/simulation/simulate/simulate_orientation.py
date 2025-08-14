@@ -6,7 +6,10 @@ import numpy as np
 import pyroomacoustics as pra
 
 from ..utils.microphones import circular_mic
-from .simulate_noise import get_random_noise
+from .simulate_noise import (
+    get_random_noise,
+    render_diffuse_array_ambience_from_mono_ambience,
+)
 
 DEFAULT_FS = 44100
 DEFAULT_ROOM_PARAMS = {
@@ -35,6 +38,7 @@ def simulate_orientation(
     room: Optional[pra.room.Room] = None,
     mic: Optional[pra.MicrophoneArray] = None,
     source_position: Optional[List[float]] = None,
+    mic_position: Optional[List[float]] = None,
     title: Optional[str] = None,
     plot: bool = True,
     noise_list: Optional[list[str]] = None,
@@ -46,10 +50,6 @@ def simulate_orientation(
         mic = DEFAULT_MIC
     if source_position is None:
         source_position = DEFAULT_SOURCE_POSITION
-    if noise_list is not None:
-        assert noise_position is not None, "Noise position must be provided if noise list is given."
-        noise, noise_delay = _get_noise(noise_list, signal, room.fs)
-        room.add_source(noise_position, signal=noise, delay=noise_delay)
     room.add_microphone_array(mic)
     room.add_source(source_position, directivity=source_directivity, signal=signal)
     room.compute_rir()
@@ -59,20 +59,48 @@ def simulate_orientation(
         _plot_rir(room, title=title)
     assert room.mic_array is not None, "Room simulation failed, no microphone array found."
     assert room.mic_array.signals is not None, "Room simulation failed, no signals found."
-    return room.mic_array.signals
+    mic_signals = room.mic_array.signals
+
+    if noise_list is not None:
+        assert noise_position is not None, "Noise position must be provided if noise list is given."
+        assert mic_position is not None, "Mic position must be provided if noise list is given."
+        noise = get_noise(noise_list, signal, mic_signals, room.fs, mic_position)
+        mic_signals += noise
+
+    return mic_signals
 
 
-def _get_noise(noise_list: list[str], signal: np.ndarray, sr: int) -> tuple[np.ndarray, int]:
-    noise, noise_delay = get_random_noise(noise_list, max_len=len(signal), sr=sr)
-    signal_rms = np.sqrt(np.mean(signal**2))
-    noise_rms = np.sqrt(np.mean(noise**2))
-    current_snr_db = 20 * np.log10(signal_rms / noise_rms) if noise_rms > 0 else float("inf")
-    if not (15 <= current_snr_db <= 25):
-        use_snr_db = random.uniform(15, 25)
-    if use_snr_db is not None and noise_rms > 0:
-        desired_noise_rms = signal_rms / (10 ** (use_snr_db / 20))
-        noise = noise * (desired_noise_rms / noise_rms)
-    return noise, noise_delay
+def get_noise(
+    noise_list: list[str], signal: np.ndarray, mic_signals: np.ndarray, sr: int, mic_position: list[float]
+) -> np.ndarray:
+    noise = get_random_noise(noise_list, max_len=len(signal), sr=sr)
+    noise_multichannel = render_diffuse_array_ambience_from_mono_ambience(
+        noise, sr, circular_mic(radius=0.045, center_position=mic_position, num_mics=6).T
+    ).T
+    noise_multichannel = _set_snr(noise_multichannel, mic_signals, (10, 20))
+    noise_multichannel = _crop_or_pad_noise_multichannel(noise_multichannel, mic_signals)
+    return noise_multichannel
+
+
+def _crop_or_pad_noise_multichannel(noise: np.ndarray, signal: np.ndarray) -> np.ndarray:
+    """Ensure that noise is the same length as the signal"""
+    if noise.shape[1] > signal.shape[1]:
+        return noise[:, : signal.shape[1]]
+    else:
+        return np.pad(noise, ((0, 0), (0, signal.shape[1] - noise.shape[1])), mode="constant")
+
+
+def _set_snr(noise: np.ndarray, signal: np.ndarray, snr_db_range: tuple[float, float]) -> np.ndarray:
+    signal_power = np.mean(signal**2, axis=1)
+    noise_power = np.mean(noise**2, axis=1)
+    avg_signal_power = np.mean(signal_power)
+    avg_noise_power = np.mean(noise_power)
+    current_snr_db = 10 * np.log10(avg_signal_power / avg_noise_power)
+    if not (snr_db_range[0] <= current_snr_db <= snr_db_range[1]):
+        target_snr_db = random.uniform(*snr_db_range)
+        scaling_factor = np.sqrt(avg_signal_power / (10 ** (target_snr_db / 10) * avg_noise_power))
+        noise = noise * scaling_factor
+    return noise
 
 
 def _plot_rir(room: pra.room.Room, title: Optional[str] = None) -> None:
